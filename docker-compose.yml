@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "yourStrong(!)Password"
+      MSSQL_PID: "Developer"
+    healthcheck:
+      test: >
+        /opt/mssql-tools18/bin/sqlcmd
+        -S localhost
+        -U sa
+        -P "yourStrong(!)Password"
+        -C
+        -Q "SELECT 1"
+      interval: 10s
+      retries: 10
+
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./sql:/sql
+    command: >
+      bash -c "
+      /opt/mssql-tools/bin/sqlcmd -S db -U sa -P 'yourStrong(!)Password' -i /sql/00-bd.sql &&
+      /opt/mssql-tools/bin/sqlcmd -S db -U sa -P 'yourStrong(!)Password' -d DBVENTA -i /sql/01-tablas.sql &&
+      /opt/mssql-tools/bin/sqlcmd -S db -U sa -P 'yourStrong(!)Password' -d DBVENTA -i /sql/02-datos.sql
+      "
+
+  api:
+    build:
+      context: .
+    container_name: punto-venta-api
+    ports:
+      - "5000:8080"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__cadenaSQL: "Server=db;Database=DBVENTA;User Id=sa;Password=yourStrong(!)Password;TrustServerCertificate=True"
